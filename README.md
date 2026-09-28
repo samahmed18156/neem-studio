@@ -6,9 +6,9 @@ section headers with `gradient-text`, tilt-on-hover cards, emoji/icon boxes). Sa
 layout as that project, so the two sites stay easy to maintain side by side.
 
 ```
-index.html        27 KB   markup
-css/style.css     26 KB   all styling, one :root block
-js/script.js       9 KB   nav, reveal, tilt, live hours, booking form
+index.html        28,039 B   markup
+css/style.css     28,617 B   all styling, one :root block, 3 breakpoints (1024 / 768 / 380)
+js/script.js      11,709 B   nav + active link, reveal, tilt, live hours, booking form
 ```
 
 ## Open it
@@ -41,6 +41,14 @@ R80 facial cupping, R120 back scrub, R99 reflexology, R100/R170/R200 kids', R549
 Where nothing is published it says **Enquire** — no invented numbers anywhere. The footer carries
 a visible "sample layout — prepared for approval, not yet published by the studio" flag.
 
+## Mobile behaviour baked in
+16px form text (iOS Safari stops auto-zooming on focus), 44–48px minimum tap targets,
+`viewport-fit=cover` plus `env(safe-area-inset-*)` padding for notched phones, the nav sheet
+capped at `100dvh` and scrollable, `body.nav-open` locks page scroll behind the sheet, Escape and
+a link tap close it, a resize back to desktop closes it too, and `scroll-padding-top` stops the
+fixed header from covering the heading you jumped to. Below 380px the service, gallery and feature
+grids collapse to one column so a 320px screen never scrolls sideways.
+
 ## Two lines to edit per client
 ```
 js/script.js   var HOURS = { 1:[9.5,18], … 0:null };   /* Mon–Sun, 24h decimals, null = closed */
@@ -51,8 +59,14 @@ Those drive the hours table, the "Today" row, the open/closed pill and the booki
 ## The booking form
 No backend by design: on submit it validates name + phone, then opens
 `https://wa.me/…?text=…` with the message already written, so the studio receives a real
-WhatsApp instead of a lost email. Swap that one `window.open` for a Formspree or Getform
-endpoint when a form should post for real.
+WhatsApp instead of a lost email. It clears only notes/time (name and phone stay filled for a
+second booking) and falls back to a "call us instead" message if the browser blocks the pop-up.
+Swap that one `window.open` for a Formspree or Getform endpoint when a form should post for real.
+
+One trap worth knowing if you edit this: never read a field as `form.name`. On a `<form>`,
+`.name` is the form's own `name` attribute (an empty string), so `form.name.value` is
+`undefined` and the submit throws. All field reads here go through `form.elements.x` /
+`form.elements.namedItem(...)`.
 
 ## Publishing (same as unalome-beauty)
 Drop the three files/folders into the repo root keeping `css/` and `js/`, then

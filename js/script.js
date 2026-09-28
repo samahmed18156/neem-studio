@@ -2,7 +2,7 @@
    NEEM STUDIO — interaction layer
    Patterns (sticky header, mobile nav, reveal-on-scroll, vanilla
    3D tilt) follow samahmed18156/unalome-beauty/js/script.js.
-   The open/closed logic and hours table are driven by one HOURS
+   Open/closed state and the hours table are driven by one HOURS
    object, so the listing stays honest in exactly one place.
    ============================================================ */
 (function () {
@@ -17,6 +17,7 @@
 
     function two(n) { return (n < 10 ? '0' : '') + n; }
     function hhmm(dec) { return two(Math.floor(dec)) + ':' + two(Math.round((dec % 1) * 60)); }
+    function byId(id) { return document.getElementById(id); }
 
     /* ---------- today in Cape Town, not the visitor's timezone ---------- */
     function joburgNow() {
@@ -30,66 +31,80 @@
                 return '';
             };
             var map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-            return { day: map[get('weekday')], mins: (+get('hour')) * 60 + (+get('minute')) };
+            var day = map[get('weekday')];
+            var mins = (+get('hour')) * 60 + (+get('minute'));
+            if (day === undefined || isNaN(mins)) { throw new Error('unparsed'); }
+            return { day: day, mins: mins };
         } catch (e) {
             var d = new Date();
             return { day: d.getDay(), mins: d.getHours() * 60 + d.getMinutes() };
         }
     }
 
-    /* ---------- hours table + open strip ---------- */
+    /* ---------- hours table + open/closed strip ---------- */
     function renderHours() {
-        var table = document.getElementById('hoursTable');
-        if (!table) { return; }
-        var now = joburgNow(), html = '', open = false, status = '';
+        var now = joburgNow();
+        var table = byId('hoursTable');
+        var pending = false;          /* true = we still have to say when it opens next */
+        var open = false;
+        var status = '';
+        var today = HOURS[now.day];
 
-        for (var i = 1; i <= 7; i++) {
-            var idx = i % 7, t = HOURS[idx], isToday = idx === now.day;
-            var time = t ? hhmm(t[0]) + ' – ' + hhmm(t[1]) : 'Closed';
-            var cls = 'hours-row' + (isToday ? ' today' : '');
-            var badge = isToday ? '<span class="badge">Today</span>' : '';
-            html += '<div class="' + cls + '"><span class="day">' + DAYS[idx] + '</span>' + badge +
-                '<span class="dots"></span><span class="time' + (t ? '' : ' closed') + '">' + time + '</span></div>';
+        if (table) {
+            var html = '';
+            for (var i = 1; i <= 7; i++) {
+                var idx = i % 7, t = HOURS[idx], isToday = idx === now.day;
+                var time = t ? hhmm(t[0]) + ' – ' + hhmm(t[1]) : 'Closed';
+                html += '<div class="hours-row' + (isToday ? ' today' : '') + '">' +
+                    '<span class="day">' + DAYS[idx] + '</span>' +
+                    (isToday ? '<span class="badge">Today</span>' : '') +
+                    '<span class="dots"></span>' +
+                    '<span class="time' + (t ? '' : ' closed') + '">' + time + '</span></div>';
+            }
+            table.innerHTML = html;
         }
-        table.innerHTML = html;
 
-        var t0 = HOURS[now.day];
-        if (t0) {
-            if (now.mins < t0[0] * 60) {
-                status = 'Opens today at ' + hhmm(t0[0]);
-            } else if (now.mins < t0[1] * 60) {
+        if (today) {
+            var from = today[0] * 60, to = today[1] * 60;
+            if (now.mins < from) {
+                pending = true;
+            } else if (now.mins < to) {
                 open = true;
-                status = (now.mins > t0[1] * 60 - 60 ? 'Closing soon · ' : 'Open now · ') + 'until ' + hhmm(t0[1]);
+                status = (to - now.mins <= 60 ? 'Closing soon · until ' : 'Open now · until ') + hhmm(today[1]);
             } else {
-                status = 'Closed for today';
+                pending = true;
             }
         } else {
             status = 'Closed today';
+            pending = true;
         }
-        if (!open) {
-            for (var b = 1; b <= 6 && status.indexOf('Opens') !== 0; b++) {
+
+        if (pending) {
+            for (var b = 1; b <= 7; b++) {
                 var nx = (now.day + b) % 7;
                 if (HOURS[nx]) {
-                    status = (b === 1 ? 'Opens tomorrow ' : 'Opens ' + DAYS[nx] + ' ') + hhmm(HOURS[nx][0]);
+                    status = 'Opens ' + (b === 1 ? 'tomorrow' : DAYS[nx]) + ' at ' + hhmm(HOURS[nx][0]);
+                    break;
                 }
             }
         }
 
-        var pill = document.getElementById('openPill');
+        var pill = byId('openPill');
         if (pill) {
             pill.textContent = status;
-            pill.className = 'pill' + (open ? '' : ' closed');
+            pill.classList.toggle('closed', !open);
         }
-        var line = document.getElementById('todayLine');
+        var line = byId('todayLine');
         if (line) {
-            line.textContent = 'Today (' + DAYS[now.day] + ') · ' + (t0 ? hhmm(t0[0]) + '–' + hhmm(t0[1]) : 'closed');
+            line.textContent = 'Today (' + DAYS[now.day] + ') · ' +
+                (today ? hhmm(today[0]) + '–' + hhmm(today[1]) : 'closed');
         }
     }
 
-    /* ---------- header state + mobile nav ---------- */
+    /* ---------- header state, mobile nav, active link ---------- */
     function initNav() {
         var header = document.querySelector('.site-header');
-        var burger = document.getElementById('hamburger');
+        var burger = byId('hamburger');
         var links = document.querySelector('.nav-links');
         if (!header || !burger || !links) { return; }
 
@@ -97,18 +112,39 @@
         window.addEventListener('scroll', onScroll, { passive: true });
         onScroll();
 
-        burger.addEventListener('click', function () {
-            var open = links.classList.toggle('open');
-            burger.classList.toggle('open', open);
-            burger.setAttribute('aria-expanded', open ? 'true' : 'false');
-        });
-        Array.prototype.forEach.call(links.querySelectorAll('a'), function (a) {
-            a.addEventListener('click', function () {
-                links.classList.remove('open');
-                burger.classList.remove('open');
-                burger.setAttribute('aria-expanded', 'false');
-            });
-        });
+        var close = function () {
+            links.classList.remove('open');
+            burger.classList.remove('open');
+            burger.setAttribute('aria-expanded', 'false');
+            document.body.classList.remove('nav-open');
+        };
+        var openMenu = function () {
+            var isOpen = links.classList.toggle('open');
+            burger.classList.toggle('open', isOpen);
+            burger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            document.body.classList.toggle('nav-open', isOpen);
+        };
+        burger.addEventListener('click', function () { links.classList.contains('open') ? close() : openMenu(); });
+        Array.prototype.forEach.call(links.querySelectorAll('a'), function (a) { a.addEventListener('click', close); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { close(); } });
+        /* never leave the sheet stuck open after a rotate / resize to desktop */
+        window.addEventListener('resize', function () { if (window.innerWidth > 768) { close(); } });
+
+        var anchors = Array.prototype.slice.call(links.querySelectorAll('a[href^="#"]'));
+        var sections = anchors.map(function (a) {
+            return document.querySelector(a.getAttribute('href'));
+        }).filter(Boolean);
+        if ('IntersectionObserver' in window && sections.length) {
+            var spy = new IntersectionObserver(function (entries) {
+                entries.forEach(function (en) {
+                    if (!en.isIntersecting) { return; }
+                    anchors.forEach(function (a) {
+                        a.classList.toggle('active', a.getAttribute('href') === '#' + en.target.id);
+                    });
+                });
+            }, { rootMargin: '-45% 0px -50% 0px' });
+            sections.forEach(function (s) { spy.observe(s); });
+        }
     }
 
     /* ---------- reveal on scroll ---------- */
@@ -118,6 +154,7 @@
             '.image-card, .about-content, .hours-table, .location-card, .info-card, ' +
             '.contact-form-container, .menu-note'
         );
+        if (!targets.length) { return; }
         if (RM || !('IntersectionObserver' in window)) { return; }
         Array.prototype.forEach.call(targets, function (el, i) {
             el.setAttribute('data-reveal', '');
@@ -131,14 +168,14 @@
         Array.prototype.forEach.call(targets, function (el) { io.observe(el); });
     }
 
-    /* ---------- vanilla 3D tilt on cards ---------- */
+    /* ---------- vanilla 3D tilt on cards (pointer devices only) ---------- */
     function initTilt() {
         if (!FINE || RM) { return; }
-        var nodes = document.querySelectorAll('[data-tilt]');
-        Array.prototype.forEach.call(nodes, function (el) {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-tilt]'), function (el) {
             var max = el.classList.contains('service-card') ? 7 : 5;
             el.addEventListener('pointermove', function (ev) {
                 var r = el.getBoundingClientRect();
+                if (!r.width || !r.height) { return; }
                 var px = (ev.clientX - r.left) / r.width - 0.5;
                 var py = (ev.clientY - r.top) / r.height - 0.5;
                 el.style.transform = 'perspective(900px) rotateY(' + (px * max).toFixed(2) +
@@ -152,36 +189,52 @@
     function initForm() {
         var form = document.getElementById('bookingForm');
         if (!form) { return; }
-        var STUDIO_WA = '27621710836'; /* +27 62 171 0836 */
+        var STUDIO_WA = '27621710836'; /* +27 62 171 0836, digits only */
+
+        /* NB: read fields through elements[] — form.name is the form's own name
+           attribute (an empty string), not the input, and would throw. */
+        var f = form.elements;
 
         form.addEventListener('submit', function (ev) {
             ev.preventDefault();
-            var name = form.name.value.trim();
-            var phone = form.phone.value.trim();
+            var name = (f.name.value || '').trim();
+            var phone = (f.phone.value || '').trim();
             var bad = false;
 
-            [form.name, form.phone].forEach(function (f) {
-                var ok = f.value.trim().length >= (f === form.phone ? 9 : 2);
-                f.classList.toggle('invalid', !ok);
-                if (!ok) { bad = true; }
-            });
+            markInvalid(f.name, name.length < 2);
+            markInvalid(f.phone, phone.replace(/\D/g, '').length < 9);
+            bad = name.length < 2 || phone.replace(/\D/g, '').length < 9;
             if (bad) {
-                note('Please add your name and a phone number so the studio can confirm.', false);
+                note('Please add your name and a phone number so the studio can call you back.', false);
+                (name.length < 2 ? f.name : f.phone).focus();
                 return;
             }
 
             var msg = 'Hello Neem Studio, I would like to book.\n\n' +
                 'Name: ' + name + '\n' +
                 'Phone: ' + phone + '\n' +
-                'Treatment: ' + (form.service.value || 'not sure yet — please advise') + '\n' +
-                'Preferred time: ' + (form.when.value.trim() || 'flexible') + '\n' +
-                (form.message.value.trim() ? 'Notes: ' + form.message.value.trim() + '\n' : '') +
+                'Treatment: ' + (f.service.value || 'not sure yet, please advise') + '\n' +
+                'Preferred time: ' + ((f.when.value || '').trim() || 'flexible') + '\n' +
+                (((f.message.value || '').trim()) ? 'Notes: ' + f.message.value.trim() + '\n' : '') +
                 '\nSent from the Neem Studio website.';
 
-            window.open('https://wa.me/' + STUDIO_WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
-            note('WhatsApp opened with your details filled in — press send there to confirm.', true);
+            var w = window.open('https://wa.me/' + STUDIO_WA + '?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+            if (w) {
+                /* clear only the free-text fields: name and phone stay filled so a
+                   second request is one keystroke away, and reset() is not relied on */
+                f.message.value = '';
+                f.when.value = '';
+            }
+            note(w
+                ? 'WhatsApp opened with your details filled in. Press send there to confirm — we will reply to 062 171 0836.'
+                : 'Your browser blocked the pop-up. Call or WhatsApp the studio on 062 171 0836 instead.', !!w);
         });
 
+        Array.prototype.forEach.call(form.querySelectorAll('input, select, textarea'), function (el) {
+            el.addEventListener('input', function () { el.classList.remove('invalid'); });
+        });
+
+        function markInvalid(el, on) { if (el && el.classList) { el.classList.toggle('invalid', !!on); } }
         function note(text, ok) {
             var n = document.getElementById('formNote');
             if (!n) { return; }
